@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RO-BOX: 3D Platform & Studio</title>
     <style>
-        /* 1. SMART GESTURE LOCKS (ISOLATED TO PREVENT BREAKING MENUS) */
+        /* SMART GESTURE LOCKS */
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             background-color: #0b0e14; font-family: 'Segoe UI', Arial, sans-serif; color: #fff;
@@ -89,7 +89,6 @@
         }
         .action-btn.green { background: #28a745; }
         .action-btn.red { background: #dc3545; }
-        .action-btn.orange { background: #ff9800; }
 
         /* STUDIO EDITOR UI */
         #studio-workspace-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; background: #1e1e24; z-index: 400; }
@@ -124,6 +123,11 @@
         #game-overlay-hud { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black; font-size: 12px; line-height: 1.4; }
         #btn-leave-room { position: absolute; top: 10px; right: 10px; background: rgba(220,53,69,0.9); color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; z-index: 100; }
 
+        /* SERVER CHAT */
+        #in-game-chat { position: absolute; bottom: 150px; left: 10px; width: 280px; height: 180px; background: rgba(11,14,20,0.75); border-radius: 8px; z-index: 90; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.1); }
+        .chat-messages { flex: 1; padding: 10px; overflow-y: auto; font-size: 12px; }
+        .chat-line { margin-bottom: 4px; line-height: 1.4; }
+
         /* MOBILE CONTROLS */
         #mobile-ui { display: none; }
         .mobile-btn {
@@ -134,6 +138,8 @@
         #joystick-zone { position: absolute; bottom: 30px; left: 30px; width: 100px; height: 100px; background: rgba(255, 255, 255, 0.15); border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); z-index: 10; }
         #joystick-knob { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.65); border-radius: 50%; pointer-events: none; }
         #jump-btn { bottom: 40px; right: 20px; width: 70px; height: 70px; }
+        #zoom-in-btn { top: 60px; right: 10px; width: 42px; height: 42px; font-size: 22px;}
+        #zoom-out-btn { top: 110px; right: 10px; width: 42px; height: 42px; font-size: 22px;}
         #crosshair { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; background: white; border-radius: 50%; transform: translate(-50%, -50%); display: none; pointer-events: none; z-index: 50; }
     </style>
 </head>
@@ -265,13 +271,22 @@
         <button id="btn-leave-room" onclick="exitWorldEngine()">LEAVE</button>
         <div id="game-overlay-hud">
             Server: <span id="lblInGameServerName" style="color:#00e5ff; font-weight:bold;">None</span><br>
-            Drag joystick / WASD to move. Drag screen to look.
+            Drag joystick / WASD to move. Drag screen / Right-Click to look.
+        </div>
+
+        <div id="in-game-chat">
+            <div class="chat-messages" id="ingameChatBox"></div>
+            <div style="display:flex; padding:5px; background:rgba(0,0,0,0.45);">
+                <input type="text" id="ingameChatInput" placeholder="Press Enter to chat..." style="padding:6px; font-size:12px; width:100%; border-radius:4px; border:none;" onkeydown="if(event.key==='Enter') sendIngameChatMessage()">
+            </div>
         </div>
 
         <div id="crosshair"></div>
         <div id="mobile-ui">
             <div id="joystick-zone" class="virtual-joystick-area"><div id="joystick-knob"></div></div>
             <div id="jump-btn" class="mobile-btn virtual-joystick-area">JUMP</div>
+            <div id="zoom-in-btn" class="mobile-btn virtual-joystick-area">+</div>
+            <div id="zoom-out-btn" class="mobile-btn virtual-joystick-area">-</div>
         </div>
     </div>
 
@@ -288,6 +303,10 @@
         ];
 
         let targetLobbyActiveObject = null;
+        let serverIsolatedChatLogHistory = {};
+
+        // Anti-scroll for canvas specifically
+        window.addEventListener('wheel', (e) => { if(document.getElementById('game-container').style.display === 'block' || document.getElementById('studio-workspace-view').style.display === 'block') e.preventDefault(); }, { passive: false });
 
         // --- NETWORK: GLOBAL MQTT BROKER ---
         const runtimeClientId = "rbx4_" + Math.random().toString(36).substring(2, 9);
@@ -297,20 +316,18 @@
         client.on('connect', () => {
             document.getElementById('networkConnectionStatus').innerText = "Connected globally via MQTT";
             document.getElementById('networkConnectionStatus').style.color = "#00ffca";
-            // Subscribe to all globally published games
             client.subscribe('robox3d_v4/global/games/#', { qos: 1 });
             rebuildPlatformGameDisplayGrids();
         });
 
         client.on('message', (topic, payload) => {
             try {
-                // Handle Global Game Syncing (Cross-Device Database Simulation via Retained Messages)
+                // Handle Global Game Syncing 
                 if (topic.startsWith('robox3d_v4/global/games/')) {
                     const gameId = topic.split('/').pop();
                     const payloadStr = payload.toString();
                     
                     if (payloadStr.length === 0) {
-                        // Deletion signal received
                         globalDatabaseGames = globalDatabaseGames.filter(g => g.id !== gameId);
                     } else {
                         const parsed = JSON.parse(payloadStr);
@@ -326,7 +343,19 @@
                     return;
                 }
 
-                // 3D Runtime Player Positions Update Pipeline
+                // Chat Pipeline
+                if (topic.startsWith('robox3d_v4/rooms/') && topic.endsWith('/chat')) {
+                    const roomId = topic.split('/')[2];
+                    const parsed = JSON.parse(payload.toString());
+                    if (!serverIsolatedChatLogHistory[roomId]) serverIsolatedChatLogHistory[roomId] = [];
+                    serverIsolatedChatLogHistory[roomId].push(parsed);
+                    if (serverIsolatedChatLogHistory[roomId].length > 40) serverIsolatedChatLogHistory[roomId].shift();
+                    
+                    if (currentActiveRoomId === roomId) renderInGameChatInterface(roomId);
+                    return;
+                }
+
+                // 3D Player Positions
                 if (topic.startsWith('robox3d_v4/rooms/') && topic.includes('/positions/')) {
                     const roomParts = topic.split('/');
                     const roomId = roomParts[2];
@@ -383,7 +412,6 @@
             document.getElementById('lblInfoCreator').innerText = game.creator;
             document.getElementById('lblInfoDescription').innerText = game.desc || "No description.";
             
-            // Show Delete button only if local player is creator (and not a system map)
             if(game.creator === localPlayerName && game.id !== "sandbox") {
                 document.getElementById('btnDeleteGame').style.display = 'block';
             } else {
@@ -394,7 +422,6 @@
 
         function closeGameInfoOverlay() {
             document.getElementById('game-info-overlay').style.display = "none";
-            targetLobbyActiveObject = null;
         }
 
         function tryUpdateUsername() {
@@ -408,11 +435,10 @@
         function deletePublishedGame() {
             if(!targetLobbyActiveObject) return;
             if(confirm("Are you sure you want to permanently delete this game from global servers?")) {
-                // Send MQTT retained message with empty payload to clear from broker
                 client.publish(`robox3d_v4/global/games/${targetLobbyActiveObject.id}`, "", { retain: true, qos: 1 });
-                // Also broadcast explicit delete flag just in case
                 client.publish(`robox3d_v4/global/games/${targetLobbyActiveObject.id}`, JSON.stringify({id: targetLobbyActiveObject.id, _delete: true}), { retain: true, qos: 1 });
                 closeGameInfoOverlay();
+                targetLobbyActiveObject = null;
             }
         }
 
@@ -441,11 +467,7 @@
                 rx: m.rotation.x, ry: m.rotation.y, rz: m.rotation.z
             }));
             
-            // Truncate redo branches
-            if (studioHistoryIndex < studioHistory.length - 1) {
-                studioHistory = studioHistory.slice(0, studioHistoryIndex + 1);
-            }
-            
+            if (studioHistoryIndex < studioHistory.length - 1) studioHistory = studioHistory.slice(0, studioHistoryIndex + 1);
             studioHistory.push(JSON.stringify(state));
             studioHistoryIndex++;
         }
@@ -507,7 +529,6 @@
             studioSelectedMeshReference = null;
             studioEditorPlayTestActiveState = false;
 
-            // Default Floor SpawnPoint
             studioInsertPart('spawn', false);
             saveStudioState(); // Base state
 
@@ -595,7 +616,7 @@
             if(studioActiveToolMode === 'move') { prop = 'p' + axis; delta *= 0.5; }
             else if(studioActiveToolMode === 'scale') { prop = 's' + axis; delta *= 0.5; }
             else if(studioActiveToolMode === 'rotate') { prop = 'r' + axis; delta *= 0.2; }
-            else return; // Ignore if in select mode
+            else return; 
             
             modifyActiveProp(prop, delta);
             saveStudioState();
@@ -647,7 +668,6 @@
             studioAnimationId = requestAnimationFrame(runStudioLoopCycle);
 
             if(!studioEditorPlayTestActiveState) {
-                // Freecam Logic
                 let fwd = (studioKeysPressedMap['w']?1:0) - (studioKeysPressedMap['s']?1:0);
                 let side = (studioKeysPressedMap['d']?1:0) - (studioKeysPressedMap['a']?1:0);
                 
@@ -657,7 +677,6 @@
                 studioCurrentCamera.position.addScaledVector(lookVector, fwd * 0.2);
                 studioCurrentCamera.position.addScaledVector(rightVector, side * 0.2);
             } else if(window._studioTestCharacterMesh) {
-                // Test Mode logic
                 let mFwd = (studioKeysPressedMap['w']?1:0) - (studioKeysPressedMap['s']?1:0);
                 let mSide = (studioKeysPressedMap['d']?1:0) - (studioKeysPressedMap['a']?1:0);
                 window._studioTestCharacterMesh.position.x += mSide * 0.15;
@@ -666,6 +685,8 @@
                 window._studioTestCharacterMesh.position.y += window._testVelocityY || 0;
                 if(window._studioTestCharacterMesh.position.y <= 0.5) { window._studioTestCharacterMesh.position.y = 0.5; window._testVelocityY = 0; } 
                 else { window._testVelocityY = (window._testVelocityY || 0) - 0.015; }
+
+                if(studioKeysPressedMap[' '] && window._studioTestCharacterMesh.position.y <= 0.5) window._testVelocityY = 0.35;
 
                 studioCurrentCamera.position.set(window._studioTestCharacterMesh.position.x, window._studioTestCharacterMesh.position.y + 4, window._studioTestCharacterMesh.position.z + 7);
                 studioCurrentCamera.lookAt(window._studioTestCharacterMesh.position);
@@ -709,7 +730,6 @@
 
             const compiledGameObject = { id: "usr_" + Math.random().toString(36).substring(2,7), title: title, desc: desc, creator: localPlayerName, components: componentsPayload };
 
-            // Beam instantly to global servers via MQTT Retained
             client.publish(`robox3d_v4/global/games/${compiledGameObject.id}`, JSON.stringify(compiledGameObject), { retain: true, qos: 1 });
             
             alert("✓ Game successfully published globally!");
@@ -730,17 +750,46 @@
 
         function launchActiveWorld() {
             if(!targetLobbyActiveObject) return;
+            
+            // Extract data BEFORE closing the overlay!
             currentActiveRoomId = targetLobbyActiveObject.id;
-            closeGameInfoOverlay();
+            const gameTitle = targetLobbyActiveObject.title;
+            const gameComponents = targetLobbyActiveObject.components;
+            
+            closeGameInfoOverlay(); // Safely close UI
+            targetLobbyActiveObject = null; // Clean up memory reference
 
             document.getElementById('homepage-launcher').style.display = 'none';
             document.getElementById('game-container').style.display = 'block';
-            document.getElementById('lblInGameServerName').innerText = targetLobbyActiveObject.title;
+            document.getElementById('lblInGameServerName').innerText = gameTitle;
 
-            initActiveGameSimulationViewport();
+            initActiveGameSimulationViewport(gameComponents);
         }
 
-        function initActiveGameSimulationViewport() {
+        // Chat logic for active games
+        function sendIngameChatMessage() {
+            const field = document.getElementById('ingameChatInput');
+            const txt = field.value.trim();
+            if (!txt || !currentActiveRoomId) return;
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            client.publish(`robox3d_v4/rooms/${currentActiveRoomId}/chat`, JSON.stringify({ time: time, user: localPlayerName, text: txt }));
+            field.value = '';
+        }
+
+        function renderInGameChatInterface(roomId) {
+            const logs = serverIsolatedChatLogHistory[roomId] || [];
+            const container = document.getElementById('ingameChatBox');
+            container.innerHTML = '';
+            logs.forEach(msg => {
+                const row = document.createElement('div');
+                row.className = "chat-line";
+                row.innerHTML = `<span style="color:#5c6e8e;">[${msg.time}]</span> <span style="color:#00e5ff; font-weight:bold;">${msg.user}:</span> ${msg.text}`;
+                container.appendChild(row);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function initActiveGameSimulationViewport(componentsData) {
             const scene = new THREE.Scene();
             activeEngineSceneReference = scene;
             scene.background = new THREE.Color(0x87ceeb); scene.fog = new THREE.Fog(0x87ceeb, 15, 65);
@@ -758,8 +807,8 @@
 
             let spawnCoordinatesVector = new THREE.Vector3(Math.random()*4-2, 0.5, Math.random()*4-2);
             
-            if(targetLobbyActiveObject && targetLobbyActiveObject.components) {
-                targetLobbyActiveObject.components.forEach(comp => {
+            if(componentsData) {
+                componentsData.forEach(comp => {
                     let geo = new THREE.BoxGeometry(1,1,1);
                     let mat = new THREE.MeshLambertMaterial({ color: comp.type==='spawn'?0xffaa00:0x6e7f9c });
                     if(comp.type==='spawn') { mat.transparent = true; mat.opacity = 0.4; spawnCoordinatesVector.set(comp.px, comp.py + 0.6, comp.pz); } 
@@ -777,40 +826,68 @@
             characterGroupNode.add(new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshLambertMaterial({ color: 0xff0000 })));
 
             client.subscribe(`robox3d_v4/rooms/${currentActiveRoomId}/positions/#`, { qos: 0 });
+            client.subscribe(`robox3d_v4/rooms/${currentActiveRoomId}/chat`, { qos: 0 });
+            renderInGameChatInterface(currentActiveRoomId);
 
-            // Inputs
+            // Desktop & Mobile Inputs
             let yaw = 0; let pitch = -0.2; let isRightMouseDown = false; 
-            let inputX = 0; let inputY = 0; const keys = { w: false, a: false, s: false, d: false };
+            let targetZoom = 6; let actualZoom = 6; const maxZoom = 15;
+            let inputX = 0; let inputY = 0; let velocityY = 0; let isGrounded = true; const jumpStrength = 0.35;
+            const keys = { w: false, a: false, s: false, d: false };
             
-            document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true); 
-            document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+            // KEYBOARD
+            const onKeyD = (e) => {
+                if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true;
+                if (e.code === 'Space' && isGrounded) { velocityY = jumpStrength; isGrounded = false; }
+                if (e.key === '-' || e.key === '_') targetZoom = Math.min(maxZoom, targetZoom + 1);
+                if (e.key === '=' || e.key === '+') targetZoom = Math.max(0, targetZoom - 1);
+            };
+            const onKeyU = (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; };
+            document.addEventListener('keydown', onKeyD); 
+            document.addEventListener('keyup', onKeyU);
             
-            // Touch JoyStick
+            // MOUSE (DESKTOP LOOK)
+            const onMouseD = (e) => { if (e.button === 2) isRightMouseDown = true; if (actualZoom < 0.5 && e.target === renderer.domElement) document.body.requestPointerLock(); };
+            const onMouseU = (e) => { if (e.button === 2) isRightMouseDown = false; };
+            const onMouseM = (e) => {
+                if (document.pointerLockElement === document.body || isRightMouseDown) {
+                    yaw -= e.movementX * 0.004; pitch -= e.movementY * 0.004;
+                    pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+                }
+            };
+            const onWheel = (e) => { targetZoom = Math.max(0, Math.min(maxZoom, targetZoom + (e.deltaY > 0 ? 1 : -1))); };
+            
+            document.addEventListener('mousedown', onMouseD); document.addEventListener('mouseup', onMouseU);
+            document.addEventListener('mousemove', onMouseM); document.addEventListener('wheel', onWheel, {passive: true});
+
+            // TOUCH (MOBILE JOYSTICK, JUMP, LOOK & ZOOM)
             if ('ontouchstart' in window || navigator.maxTouchPoints > 0) { document.getElementById('mobile-ui').style.display = 'block'; }
             const joystickZone = document.getElementById('joystick-zone'); const joystickKnob = document.getElementById('joystick-knob');
             let jCenter = {x:0, y:0}, activeJTouchId = null;
 
             joystickZone.addEventListener('touchstart', e => {
-                e.preventDefault();
                 const t = e.changedTouches[0]; activeJTouchId = t.identifier;
                 const r = joystickZone.getBoundingClientRect(); jCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
                 updateJoystick(t.clientX, t.clientY);
             });
             joystickZone.addEventListener('touchmove', e => {
-                e.preventDefault();
                 for(let i=0; i<e.changedTouches.length; i++) if(e.changedTouches[i].identifier === activeJTouchId) updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
             });
             joystickZone.addEventListener('touchend', e => {
-                e.preventDefault();
                 for(let i=0; i<e.changedTouches.length; i++) if(e.changedTouches[i].identifier === activeJTouchId) { inputX=0; inputY=0; joystickKnob.style.transform=`translate(0px, 0px)`; activeJTouchId=null; }
             });
 
             function updateJoystick(clientX, clientY) {
-                let dx = clientX - jCenter.x, dy = clientY - jCenter.y;
-                const dist = Math.hypot(dx, dy);
+                let dx = clientX - jCenter.x, dy = clientY - jCenter.y; const dist = Math.hypot(dx, dy);
                 if (dist > 30) { dx = (dx/dist)*30; dy = (dy/dist)*30; }
                 joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`; inputX = dx / 30; inputY = dy / 30;
             }
+
+            // Mobile jump and zoom buttons
+            const jumpBtn = document.getElementById('jump-btn');
+            jumpBtn.addEventListener('touchstart', e => { if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } });
+            document.getElementById('zoom-in-btn').addEventListener('touchstart', e => { targetZoom = Math.max(0, targetZoom - 1.5); });
+            document.getElementById('zoom-out-btn').addEventListener('touchstart', e => { targetZoom = Math.min(maxZoom, targetZoom + 1.5); });
 
             // Look screen drag
             let lastTx = 0, lastTy = 0;
@@ -821,6 +898,7 @@
             document.getElementById('game-container').addEventListener('touchmove', e => {
                 if(e.target.closest('.virtual-joystick-area')) return;
                 yaw -= (e.touches[0].clientX - lastTx) * 0.005; pitch -= (e.touches[0].clientY - lastTy) * 0.005;
+                pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
                 lastTx = e.touches[0].clientX; lastTy = e.touches[0].clientY;
             });
 
@@ -848,8 +926,25 @@
                     characterGroupNode.rotation.y = yaw;
                 }
 
-                camera.position.set(characterGroupNode.position.x - -Math.sin(yaw)*Math.cos(pitch)*6, characterGroupNode.position.y + 1 - Math.sin(pitch)*6, characterGroupNode.position.z - -Math.cos(yaw)*Math.cos(pitch)*6);
-                camera.lookAt(characterGroupNode.position.x, characterGroupNode.position.y + 1, characterGroupNode.position.z);
+                // Physics logic (Gravity)
+                if (!isGrounded) {
+                    velocityY += -0.015; characterGroupNode.position.y += velocityY;
+                    if (characterGroupNode.position.y <= 0.5) { characterGroupNode.position.y = 0.5; velocityY = 0; isGrounded = true; }
+                }
+
+                // Zoom logic and camera switch
+                actualZoom += (targetZoom - actualZoom) * 0.1;
+                const lookDirX = -Math.sin(yaw) * Math.cos(pitch); const lookDirY = Math.sin(pitch); const lookDirZ = -Math.cos(yaw) * Math.cos(pitch);
+
+                if (actualZoom < 0.5) {
+                    characterGroupNode.visible = false; document.getElementById('crosshair').style.display = 'block';
+                    camera.position.set(characterGroupNode.position.x, characterGroupNode.position.y + 0.3, characterGroupNode.position.z);
+                    camera.lookAt(characterGroupNode.position.x + lookDirX, characterGroupNode.position.y + lookDirY, characterGroupNode.position.z + lookDirZ);
+                } else {
+                    characterGroupNode.visible = true; document.getElementById('crosshair').style.display = 'none';
+                    camera.position.set(characterGroupNode.position.x - lookDirX * actualZoom, characterGroupNode.position.y + 1 - lookDirY * actualZoom, characterGroupNode.position.z - lookDirZ * actualZoom);
+                    camera.lookAt(characterGroupNode.position.x, characterGroupNode.position.y + 1, characterGroupNode.position.z);
+                }
 
                 remotePlayers.forEach((pData, id) => {
                     if (Date.now() - pData.lastUpdate > 4000) { scene.remove(pData.mesh); remotePlayers.delete(id); } 
@@ -859,9 +954,19 @@
                 renderer.render(scene, camera);
             }
             
+            const onResizeRef = () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
+            window.addEventListener('resize', onResizeRef);
+            
             window._teardownCurrentWorldInstance = () => {
                 cancelAnimationFrame(gameAnimationFrameHandle); clearInterval(gameNetworkIntervalHandle);
                 client.unsubscribe(`robox3d_v4/rooms/${currentActiveRoomId}/positions/#`, { qos: 0 });
+                client.unsubscribe(`robox3d_v4/rooms/${currentActiveRoomId}/chat`, { qos: 0 });
+                
+                document.removeEventListener('keydown', onKeyD); document.removeEventListener('keyup', onKeyU);
+                document.removeEventListener('mousedown', onMouseD); document.removeEventListener('mouseup', onMouseU);
+                document.removeEventListener('mousemove', onMouseM); document.removeEventListener('wheel', onWheel);
+                window.removeEventListener('resize', onResizeRef);
+
                 renderer.dispose(); renderer.domElement.remove(); activeEngineSceneReference = null;
             };
             animate();
@@ -869,6 +974,7 @@
 
         function exitWorldEngine() {
             if (window._teardownCurrentWorldInstance) window._teardownCurrentWorldInstance();
+            document.exitPointerLock?.();
             document.getElementById('game-container').style.display = 'none';
             document.getElementById('homepage-launcher').style.display = 'flex';
         }
