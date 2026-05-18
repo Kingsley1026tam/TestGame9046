@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Multi-Game Hub platform</title>
+    <style>
+        /* 1. GLOBAL NO-COPY STYLE ENFORCEMENT */
+        *, *::before, *::after {
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+        }
+        input, textarea {
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #0b0e14;
+            font-family: 'Segoe UI', Arial, sans-serif; color: #fff;
+        }
+
+        /* ROBLOX STYLE HOMEPAGE LAUNCHER */
+        #homepage-launcher {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at top, #1a2233 0%, #0d111a 100%);
+            display: flex; z-index: 500; transition: opacity 0.4s ease;
+        }
+        #sidebar {
+            width: 240px; background: rgba(18, 24, 38, 0.95);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
+        }
+        .logo-area { font-size: 22px; font-weight: 900; letter-spacing: 3px; color: #00e5ff; margin-bottom: 30px; text-shadow: 0 0 10px rgba(0,229,255,0.3); }
+        .nav-btn {
+            background: transparent; border: none; color: #8fa0c2; padding: 12px 16px;
+            text-align: left; font-size: 15px; font-weight: 600; cursor: pointer;
+            border-radius: 8px; margin-bottom: 6px; transition: all 0.2s;
+        }
+        .nav-btn:hover, .nav-btn.active { background: rgba(0, 229, 255, 0.1); color: #00e5ff; }
+        
+        #main-content { flex: 1; padding: 30px; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; }
+        .view-panel { display: none; flex-direction: column; height: 100%; }
+        .view-panel.active { display: flex; }
+
+        /* GAMES SELECTION UI */
+        .games-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-top: 15px; }
+        .game-card {
+            background: #161f30; border-radius: 12px; padding: 15px; cursor: pointer;
+            border: 2px solid transparent; transition: all 0.2s; text-align: center;
+        }
+        .game-card:hover { transform: translateY(-4px); background: #1e2b42; }
+        .game-card.selected { border-color: #00e5ff; background: #1a2e47; box-shadow: 0 0 15px rgba(0,229,255,0.2); }
+        .game-thumb { width: 100%; height: 120px; border-radius: 8px; background: #22314a; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+        .game-title { font-weight: bold; font-size: 16px; }
+
+        /* PROFILE & NAME SETTING UI */
+        .form-box { background: #161f30; padding: 25px; border-radius: 12px; max-width: 450px; border: 1px solid rgba(255,255,255,0.05); }
+        .input-row { display: flex; gap: 10px; margin-top: 10px; }
+        input[type="text"] {
+            flex: 1; background: #0b0e14; border: 1px solid #2d3b54; padding: 12px;
+            border-radius: 8px; color: white; font-size: 14px; outline: none; transition: border 0.2s;
+        }
+        input[type="text"]:focus { border-color: #00e5ff; }
+        .action-btn {
+            background: #007bff; border: none; color: white; padding: 12px 20px;
+            font-weight: bold; border-radius: 8px; cursor: pointer; transition: background 0.2s;
+        }
+        .action-btn:hover { background: #0056b3; }
+        .action-btn.green { background: #28a745; }
+        .action-btn.green:hover { background: #218838; }
+        .status-msg { margin-top: 10px; font-size: 13px; font-weight: 600; }
+
+        /* FRIENDS INTERFACE UI */
+        .friends-list { margin-top: 15px; max-height: 300px; overflow-y: auto; background: #0b0e14; border-radius: 8px; padding: 10px; }
+        .friend-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .status-dot.online { background: #28a745; box-shadow: 0 0 8px #28a745; }
+        .status-dot.offline { background: #6c757d; }
+
+        /* PERSISTENT GLOBAL CHAT WINDOW */
+        .chat-container {
+            display: flex; flex-direction: column; background: #161f30; 
+            border-radius: 12px; height: 350px; margin-top: 20px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; font-size: 14px; }
+        .chat-msg-line { margin-bottom: 8px; line-height: 1.4; word-break: break-all; }
+        .chat-msg-time { color: #5c6e8e; font-size: 11px; margin-right: 6px; }
+        .chat-msg-user { color: #00e5ff; font-weight: bold; margin-right: 5px; }
+
+        /* PLAY LAUNCH BLOCK */
+        .footer-launch { margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
+        .launch-summary { color: #a2b4d6; font-size: 14px; }
+        .btn-play-game { background: #28a745; color: white; font-size: 22px; font-weight: 800; padding: 15px 50px; border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 15px rgba(40,167,69,0.3); }
+        .btn-play-game:hover { background: #218838; }
+
+        /* REALTIME 3D VIEW OVERLAYS */
+        #game-container { width: 100%; height: 100%; display: none; position: relative; }
+        #game-overlay-hud { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 100; text-shadow: 1px 1px 2px black; font-size: 13px; }
+        #btn-leave-room { position: absolute; top: 10px; right: 10px; background: rgba(220,53,69,0.85); color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; z-index: 100; }
+        #in-game-chat { position: absolute; bottom: 180px; left: 20px; width: 300px; height: 200px; background: rgba(11,14,20,0.7); border-radius: 8px; z-index: 90; display: flex; flex-direction: column; pointer-events: auto; }
+
+        /* Mobile Controls Layout */
+        #mobile-ui { display: none; }
+        .mobile-btn {
+            background: rgba(255, 255, 255, 0.25); border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%; color: white; font-family: sans-serif; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; z-index: 10; position: absolute;
+        }
+        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 110px; height: 110px; background: rgba(255, 255, 255, 0.15); border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); touch-action: none; z-index: 10; }
+        #joystick-knob { position: absolute; top: 27px; left: 27px; width: 56px; height: 56px; background: rgba(255, 255, 255, 0.65); border-radius: 50%; pointer-events: none; }
+        #jump-btn { bottom: 50px; right: 30px; width: 76px; height: 76px; }
+        #zoom-in-btn { top: 70px; right: 10px; width: 42px; height: 42px; font-size: 22px;}
+        #zoom-out-btn { top: 120px; right: 10px; width: 42px; height: 42px; font-size: 22px;}
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; background: white; border-radius: 50%; transform: translate(-50%, -50%); display: none; pointer-events: none; z-index: 50; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="homepage-launcher">
+        <div id="sidebar">
+            <div class="logo-area">RO-BOX 3D</div>
+            <button class="nav-btn active" onclick="switchTab('games')">Discover Games</button>
+            <button class="nav-btn" onclick="switchTab('profile')">My Profile</button>
+            <button class="nav-btn" onclick="switchTab('friends')">Friends List</button>
+            <button class="nav-btn" onclick="switchTab('chat')">Global Server Chat</button>
+        </div>
+
+        <div id="main-content">
+            <div id="panel-games" class="view-panel active">
+                <h2>Discover Experiences</h2>
+                <div class="games-grid">
+                    <div class="game-card selected" onclick="selectGame('sandbox', this)">
+                        <div class="game-thumb">🏝️</div>
+                        <div class="game-title">Arena Sandbox</div>
+                    </div>
+                    <div class="game-card" onclick="selectGame('raceway', this)">
+                        <div class="game-thumb">🏎️</div>
+                        <div class="game-title">Neon Raceway</div>
+                    </div>
+                    <div class="game-card" onclick="selectGame('survival', this)">
+                        <div class="game-thumb">🌋</div>
+                        <div class="game-title">Lava Survival</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panel-profile" class="view-panel">
+                <h2>Account Settings</h2>
+                <div class="form-box">
+                    <label style="font-size:13px; color:#a2b4d6;">CHOOSE UNIQUE USERNAME</label>
+                    <div class="input-row">
+                        <input type="text" id="usernameInput" placeholder="Enter alphanumeric name...">
+                        <button class="action-btn" onclick="tryUpdateUsername()">Save Changes</button>
+                    </div>
+                    <div id="username-status" class="status-msg"></div>
+                </div>
+            </div>
+
+            <div id="panel-friends" class="view-panel">
+                <h2>Friends Tracker</h2>
+                <div class="form-box" style="max-width:100%;">
+                    <label style="font-size:13px; color:#a2b4d6;">ADD NEW FRIEND PROFILE</label>
+                    <div class="input-row">
+                        <input type="text" id="friendInput" placeholder="Type user identity name...">
+                        <button class="action-btn green" onclick="addNewFriend()">Add to List</button>
+                    </div>
+                </div>
+                <div class="friends-list" id="friendsDisplayContainer"></div>
+            </div>
+
+            <div id="panel-chat" class="view-panel">
+                <h2>Global Server Chat Logs</h2>
+                <div class="chat-container">
+                    <div class="chat-messages" id="globalChatBox"></div>
+                    <div style="display:flex; padding:10px; background:rgba(0,0,0,0.2);">
+                        <input type="text" id="globalChatInput" placeholder="Type network broadcast message..." onkeydown="if(event.key==='Enter') sendGlobalChatMessage()">
+                        <button class="action-btn" style="margin-left:10px;" onclick="sendGlobalChatMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-launch">
+                <div class="launch-summary">
+                    Status: <span id="networkConnectionStatus" style="color:#00e5ff; font-weight:bold;">Initializing...</span><br>
+                    Selected Server Zone: <span id="txtActiveGame" style="color:#fff; font-weight:bold;">Arena Sandbox</span>
+                </div>
+                <button class="btn-play-game" onclick="launchActiveWorld()">SPAWN & PLAY</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <button id="btn-leave-room" onclick="exitWorldEngine()">LEAVE RUNSPACE</button>
+        <div id="game-overlay-hud">
+            <strong>Controls:</strong> W,A,S,D / Drag Joystick to Run<br>
+            Right-Click + Mouse / Left Touch Drag to Look Around<br>
+            Scroll Wheel / Keypad Buttons to Zoom Camera View
+        </div>
+        
+        <div id="in-game-chat">
+            <div class="chat-messages" id="ingameChatBox" style="font-size:12px;"></div>
+            <div style="display:flex; padding:5px; background:rgba(0,0,0,0.3);">
+                <input type="text" id="ingameChatInput" placeholder="Press Enter to send chat..." onkeydown="if(event.key==='Enter') sendIngameChatMessage()" style="padding:6px; font-size:12px;">
+            </div>
+        </div>
+
+        <div id="crosshair"></div>
+        <div id="mobile-ui">
+            <div id="joystick-zone"><div id="joystick-knob"></div></div>
+            <div id="jump-btn" class="mobile-btn">JUMP</div>
+            <div id="zoom-in-btn" class="mobile-btn">+</div>
+            <div id="zoom-out-btn" class="mobile-btn">-</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+
+    <script>
+        // --- CHANNELS, LOGS & ACCOUNT INITIALIZATION ---
+        let localPlayerName = localStorage.getItem('robox_username') || "Guest_" + Math.floor(1000 + Math.random() * 9000);
+        let selectedGameId = "sandbox";
+        let friendsArray = JSON.parse(localStorage.getItem('robox_friends')) || [];
+        let chatHistory = JSON.parse(localStorage.getItem('robox_chat_persistent')) || [];
+
+        document.getElementById('usernameInput').value = localPlayerName;
+
+        // WALKING SOUND INSTANCE SETUP
+        const walkAudioInstance = new Audio('WalkingSound.mp3');
+        let walkingSoundActiveLoopState = false; 
+        let localCharacterIsMovingState = false; 
+
+        // Sound execution architecture loop
+        walkAudioInstance.addEventListener('ended', () => {
+            walkingSoundActiveLoopState = false;
+            // Loop condition handler: Check if movement inputs are still held down
+            if (localCharacterIsMovingState) {
+                triggerWalkingAudioLoop();
+            }
+        });
+
+        function triggerWalkingAudioLoop() {
+            if (!walkingSoundActiveLoopState && localCharacterIsMovingState) {
+                walkingSoundActiveLoopState = true;
+                walkAudioInstance.play().catch(() => {
+                    walkingSoundActiveLoopState = false; // Bypass browser context payload blockages safely
+                });
+            }
+        }
+
+        // Initialize Local Storage Chat Sync
+        function renderSavedPersistentChatLogs() {
+            const globalBox = document.getElementById('globalChatBox');
+            const gameBox = document.getElementById('ingameChatBox');
+            globalBox.innerHTML = '';
+            gameBox.innerHTML = '';
+
+            chatHistory.forEach(msg => {
+                const row = document.createElement('div');
+                row.className = "chat-msg-line";
+                row.innerHTML = `<span class="chat-msg-time">[${msg.time}]</span><span class="chat-msg-user">${msg.user}:</span> ${msg.text}`;
+                
+                globalBox.appendChild(row.cloneNode(true));
+                gameBox.appendChild(row.cloneNode(true));
+            });
+            globalBox.scrollTop = globalBox.scrollHeight;
+            gameBox.scrollTop = gameBox.scrollHeight;
+        }
+
+        // MULTIPLAYER PIPELINE INTERFACE MANAGEMENT (MQTT WebSockets)
+        const runtimeClientId = "rbx_" + Math.random().toString(36).substring(2, 9);
+        const remotePlayers = new Map(); 
+        
+        const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+            clientId: runtimeClientId, clean: true, connectTimeout: 5000
+        });
+
+        client.on('connect', () => {
+            document.getElementById('networkConnectionStatus').innerText = "Online & Synced";
+            document.getElementById('networkConnectionStatus').style.color = "#00ffca";
+            // Listen on base system control paths
+            client.subscribe('robox3d/global/chat', { qos: 0 });
+            client.subscribe('robox3d/global/identity_check', { qos: 0 });
+            refreshFriendsVisualListing();
+        });
+
+        client.on('message', (topic, payload) => {
+            try {
+                const messageString = payload.toString();
+                const parsedData = JSON.parse(messageString);
+
+                // Live Unique Name Enforcer logic
+                if (topic === 'robox3d/global/identity_check') {
+                    if (parsedData.cId !== runtimeClientId && parsedData.requestedName === localPlayerName) {
+                        // Conflict found! Revert username instantly
+                        document.getElementById('username-status').innerText = "Notice: Current name claimed by online registry!";
+                        document.getElementById('username-status').style.color = "#ff4444";
+                        localPlayerName = "Guest_" + Math.floor(1000 + Math.random() * 9000);
+                        localStorage.setItem('robox_username', localPlayerName);
+                        document.getElementById('usernameInput').value = localPlayerName;
+                    }
+                    return;
+                }
+
+                // Global Persistent Server Chat parsing logic
+                if (topic === 'robox3d/global/chat') {
+                    chatHistory.push(parsedData);
+                    // Keep historical bounds inside memory array parameters
+                    if (chatHistory.length > 60) chatHistory.shift();
+                    localStorage.setItem('robox_chat_persistent', JSON.stringify(chatHistory));
+                    renderSavedPersistentChatLogs();
+                    return;
+                }
+
+                // Per-game Dynamic Virtual Space calculations
+                if (topic.startsWith(`robox3d/rooms/${selectedGameId}/positions`)) {
+                    const trackingSenderId = topic.split('/').pop();
+                    if (trackingSenderId === runtimeClientId) return;
+
+                    if (!remotePlayers.has(trackingSenderId)) {
+                        const geom = new THREE.BoxGeometry(1, 1, 1);
+                        const mat = new THREE.MeshLambertMaterial({ color: 0x00ff7f });
+                        const mesh = new THREE.Mesh(geom, mat);
+                        activeEngineSceneReference?.add(mesh);
+
+                        remotePlayers.set(trackingSenderId, {
+                            mesh: mesh, name: parsedData.name,
+                            targetPos: new THREE.Vector3(parsedData.x, parsedData.y, parsedData.z),
+                            targetQuat: new THREE.Quaternion(parsedData.qx, parsedData.qy, parsedData.qz, parsedData.qw),
+                            lastUpdate: Date.now()
+                        });
+                        refreshFriendsVisualListing();
+                    } else {
+                        const playerInstance = remotePlayers.get(trackingSenderId);
+                        playerInstance.targetPos.set(parsedData.x, parsedData.y, parsedData.z);
+                        playerInstance.targetQuat.set(parsedData.qx, parsedData.qy, parsedData.qz, parsedData.qw);
+                        playerInstance.lastUpdate = Date.now();
+                    }
+                }
+            } catch (err) { /* Catch bad data packets safely */ }
+        });
+
+        // PLATFORM ACCOUNT SYSTEM RULES & LOGIC
+        function tryUpdateUsername() {
+            const requestedName = document.getElementById('usernameInput').value.trim();
+            if (requestedName.length < 3) {
+                alert("Username is too short!"); return;
+            }
+
+            // Check if name is taken by looking at current active remote players
+            let nameConflictDetected = false;
+            remotePlayers.forEach(p => {
+                if (p.name.toLowerCase() === requestedName.toLowerCase()) nameConflictDetected = true;
+            });
+
+            if (nameConflictDetected) {
+                document.getElementById('username-status').innerText = "Error: Name currently used by another user!";
+                document.getElementById('username-status').style.color = "#ff4444";
+                return;
+            }
+
+            localPlayerName = requestedName;
+            localStorage.setItem('robox_username', localPlayerName);
+            document.getElementById('username-status').innerText = "✓ Unique Name Accepted & Saved!";
+            document.getElementById('username-status').style.color = "#28a745";
+
+            // Broadcast changes to active servers
+            client.publish('robox3d/global/identity_check', JSON.stringify({ cId: runtimeClientId, requestedName: localPlayerName }));
+        }
+
+        function addNewFriend() {
+            const name = document.getElementById('friendInput').value.trim();
+            if (name && !friendsArray.includes(name)) {
+                friendsArray.push(name);
+                localStorage.setItem('robox_friends', JSON.stringify(friendsArray));
+                document.getElementById('friendInput').value = '';
+                refreshFriendsVisualListing();
+            }
+        }
+
+        function refreshFriendsVisualListing() {
+            const container = document.getElementById('friendsDisplayContainer');
+            container.innerHTML = '';
+            
+            // Collect list of online players
+            const activeOnlineNames = [];
+            remotePlayers.forEach(p => activeOnlineNames.push(p.name));
+
+            friendsArray.forEach(friend => {
+                const isOnline = activeOnlineNames.includes(friend);
+                const block = document.createElement('div');
+                block.className = "friend-item";
+                block.innerHTML = `
+                    <span><span class="status-dot ${isOnline?'online':'offline'}"></span>${friend}</span>
+                    <span style="font-size:12px; color:${isOnline?'#28a745':'#6c757d'}">${isOnline?'ONLINE':'OFFLINE'}</span>
+                `;
+                container.appendChild(block);
+            });
+        }
+
+        function sendGlobalChatMessage() {
+            const field = document.getElementById('globalChatInput');
+            processChatSend(field);
+        }
+        function sendIngameChatMessage() {
+            const field = document.getElementById('ingameChatInput');
+            processChatSend(field);
+        }
+        function processChatSend(inputField) {
+            const txt = inputField.value.trim();
+            if (!txt) return;
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            const packet = { time: timestamp, user: localPlayerName, text: txt };
+            client.publish('robox3d/global/chat', JSON.stringify(packet));
+            inputField.value = '';
+        }
+
+        // TABS NAVIGATION NAVIGATION ENGINE
+        function switchTab(targetTab) {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById('panel-' + targetTab).classList.add('active');
+        }
+
+        function selectGame(gameId, element) {
+            selectedGameId = gameId;
+            document.querySelectorAll('.game-card').forEach(c => c.classList.remove('selected'));
+            element.classList.add('selected');
+            document.getElementById('txtActiveGame').innerText = element.querySelector('.game-title').innerText;
+        }
+
+        // --- ACTIVE CORE 3D GRAPHICS RUNTIME ENVIRONMENT ---
+        let activeEngineSceneReference = null;
+        let animationFrameHandle = null;
+        let networkTransmissionIntervalHandle = null;
+
+        function launchActiveWorld() {
+            // Heartbeat update registration switch
+            client.publish('robox3d/global/identity_check', JSON.stringify({ cId: runtimeClientId, requestedName: localPlayerName }));
+
+            document.getElementById('homepage-launcher').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('homepage-launcher').style.display = 'none';
+                document.getElementById('game-container').style.display = 'block';
+                initGameViewportEngine();
+            }, 400);
+        }
+
+        function initGameViewportEngine() {
+            const scene = new THREE.Scene();
+            activeEngineSceneReference = scene;
+            
+            // Dynamically change environment map coloring based on selected instance room type
+            if (selectedGameId === 'raceway') {
+                scene.background = new THREE.Color(0x0a0a14);
+                scene.fog = new THREE.Fog(0x0a0a14, 15, 55);
+            } else if (selectedGameId === 'survival') {
+                scene.background = new THREE.Color(0x240905);
+                scene.fog = new THREE.Fog(0x240905, 10, 45);
+            } else {
+                scene.background = new THREE.Color(0x87ceeb);
+                scene.fog = new THREE.Fog(0x87ceeb, 10, 60);
+            }
+
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.85); scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1); directionalLight.position.set(15, 30, 15); scene.add(directionalLight);
+
+            // Spawning Local Identity representation
+            const playerGroup = new THREE.Group();
+            playerGroup.position.set(Math.random() * 4 - 2, 0.5, Math.random() * 4 - 2);
+            scene.add(playerGroup);
+            playerGroup.add(new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshLambertMaterial({ color: 0xff0000 })));
+
+            // Floor structures mappings
+            const gridHelper = new THREE.GridHelper(100, 50, 0x000000, 0xffffff); scene.add(gridHelper);
+            const floorGeo = new THREE.PlaneGeometry(100, 100);
+            const floorMat = new THREE.MeshLambertMaterial({ color: selectedGameId==='raceway'? 0x1c1d24 : (selectedGameId==='survival'? 0x541c15 : 0x3b7a57) });
+            const ground = new THREE.Mesh(floorGeo, floorMat); ground.rotation.x = -Math.PI/2; ground.position.y = -0.01; scene.add(ground);
+
+            // Room Level Network Subscriber bindings
+            client.subscribe(`robox3d/rooms/${selectedGameId}/positions/#`, { qos: 0 });
+
+            // Global State Engine Lookups
+            let cameraMode = 3; let yaw = 0; let pitch = -0.2; const sensitivity = 0.004;
+            let isRightMouseDown = false; let targetZoom = 5; let actualZoom = 5; const maxZoom = 15;
+            let inputX = 0; let inputY = 0; const keys = { w: false, a: false, s: false, d: false };
+            const speed = 0.15; let velocityY = 0; const gravity = -0.015; const jumpStrength = 0.35; let isGrounded = true;
+
+            // Mapping Event Triggers
+            const keydownRef = (e) => {
+                if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true;
+                if (e.code === 'Space' && isGrounded) { velocityY = jumpStrength; isGrounded = false; }
+                if (e.key === '-' || e.key === '_') targetZoom = Math.min(maxZoom, targetZoom + 1);
+                if (e.key === '=' || e.key === '+') targetZoom = Math.max(0, targetZoom - 1);
+            };
+            const keyupRef = (e) => { if (keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; };
+            const mousedownRef = (e) => {
+                if (e.button === 2) isRightMouseDown = true;
+                if (cameraMode === 1 && e.target === renderer.domElement) document.body.requestPointerLock();
+            };
+            const mouseupRef = (e) => { if (e.button === 2) isRightMouseDown = false; };
+            const mousemoveRef = (e) => {
+                if (document.pointerLockElement === document.body || isRightMouseDown) {
+                    yaw -= e.movementX * sensitivity; pitch -= e.movementY * sensitivity;
+                    pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
+                }
+            };
+            const wheelRef = (e) => { targetZoom = Math.max(0, Math.min(maxZoom, targetZoom + (e.deltaY > 0 ? 1 : -1))); };
+
+            document.addEventListener('keydown', keydownRef); document.addEventListener('keyup', keyupRef);
+            document.addEventListener('mousedown', mousedownRef); document.addEventListener('mouseup', mouseupRef);
+            document.addEventListener('mousemove', mousemoveRef); document.addEventListener('wheel', wheelRef);
+
+            // ADVANCED PINCH ZOOM INDEPENDENT EVENT MONITOR CORES
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) { document.getElementById('mobile-ui').style.display = 'block'; }
+            const activeTouches = {}; let initialPinchDistance = null;
+            const joystickZone = document.getElementById('joystick-zone'); const joystickKnob = document.getElementById('joystick-knob');
+            let joystickCenter = { x: 0, y: 0 };
+
+            const touchstartRef = (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i]; let type = 'camera';
+                    if (t.target.id === 'jump-btn') { type = 'ui'; if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
+                    else if (t.target.id === 'zoom-in-btn') { type = 'ui'; targetZoom = Math.max(0, targetZoom - 1.5); }
+                    else if (t.target.id === 'zoom-out-btn') { type = 'ui'; targetZoom = Math.min(maxZoom, targetZoom + 1.5); }
+                    else if (t.target.id === 'joystick-zone' || t.target.id === 'joystick-knob') {
+                        type = 'joystick'; const rect = joystickZone.getBoundingClientRect();
+                        joystickCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 }; updateJoystick(t.clientX, t.clientY);
+                    }
+                    activeTouches[t.identifier] = { type: type, lastX: t.clientX, lastY: t.clientY };
+                }
+            };
+
+            const touchmoveRef = (e) => {
+                let cameraTouches = [];
+                for (let i = 0; i < e.touches.length; i++) {
+                    const t = e.touches[i]; const td = activeTouches[t.identifier];
+                    if (td) { if (td.type === 'joystick') updateJoystick(t.clientX, t.clientY); else if (td.type === 'camera') cameraTouches.push(t); }
+                }
+                if (cameraTouches.length === 2) {
+                    const dist = Math.hypot(cameraTouches[0].clientX - cameraTouches[1].clientX, cameraTouches[0].clientY - cameraTouches[1].clientY);
+                    if (initialPinchDistance === null) initialPinchDistance = dist;
+                    else { targetZoom = Math.max(0, Math.min(maxZoom, targetZoom - (dist - initialPinchDistance) * 0.04)); initialPinchDistance = dist; }
+                } else {
+                    initialPinchDistance = null;
+                    if (cameraTouches.length === 1) {
+                        const t = cameraTouches[0];
+                        for (let i = 0; i < e.changedTouches.length; i++) {
+                            if (e.changedTouches[i].identifier === t.identifier) {
+                                const td = activeTouches[t.identifier];
+                                yaw -= (t.clientX - td.lastX) * sensitivity * 1.5; pitch -= (t.clientY - td.lastY) * sensitivity * 1.5;
+                                pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch)); td.lastX = t.clientX; td.lastY = t.clientY;
+                            }
+                        }
+                    }
+                }
+            };
+
+            const touchendRef = (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (activeTouches[t.identifier] && activeTouches[t.identifier].type === 'joystick') { inputX = 0; inputY = 0; joystickKnob.style.transform = `translate(0px, 0px)`; }
+                    delete activeTouches[t.identifier];
+                }
+                initialPinchDistance = null;
+            };
+
+            document.addEventListener('touchstart', touchstartRef, { passive: false });
+            document.addEventListener('touchmove', touchmoveRef, { passive: false });
+            document.addEventListener('touchend', touchendRef);
+
+            function updateJoystick(clientX, clientY) {
+                const maxRadius = 40; let dx = clientX - joystickCenter.x, dy = clientY - joystickCenter.y; const dist = Math.hypot(dx, dy);
+                if (dist > maxRadius) { dx = (dx/dist)*maxRadius; dy = (dy/dist)*maxRadius; }
+                joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`; inputX = dx / maxRadius; inputY = dy / maxRadius;
+            }
+
+            // High-frequency position network dispatch processing loop
+            networkTransmissionIntervalHandle = setInterval(() => {
+                if (client && client.connected) {
+                    client.publish(`robox3d/rooms/${selectedGameId}/positions/${runtimeClientId}`, JSON.stringify({
+                        name: localPlayerName, x: playerGroup.position.x, y: playerGroup.position.y, z: playerGroup.position.z,
+                        qx: playerGroup.quaternion.x, qy: playerGroup.quaternion.y, qz: playerGroup.quaternion.z, qw: playerGroup.quaternion.w
+                    }), { qos: 0, retain: false });
+                }
+            }, 50);
+
+            // Render loop lifecycle closure step
+            function animate() {
+                animationFrameHandle = requestAnimationFrame(animate);
+
+                let moveForward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0) - inputY;
+                let moveRight = (keys.d ? 1 : 0) - (keys.a ? 1 : 0) + inputX;
+                const length = Math.hypot(moveRight, moveForward);
+                
+                if (length > 0.05) {
+                    // Update sound tracking state matrices
+                    localCharacterIsMovingState = true; 
+                    triggerWalkingAudioLoop();
+
+                    const normRight = moveRight / length; const normForward = moveForward / length;
+                    const forwardDirX = -Math.sin(yaw), forwardDirZ = -Math.cos(yaw);
+                    const rightDirX = Math.cos(yaw), rightDirZ = -Math.sin(yaw);
+
+                    playerGroup.position.x += (forwardDirX * normForward + rightDirX * normRight) * speed;
+                    playerGroup.position.z += (forwardDirZ * normForward + rightDirZ * normRight) * speed;
+
+                    const targetAngle = yaw + Math.atan2(-normRight, normForward);
+                    const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                    playerGroup.quaternion.slerp(targetRotation, 0.18);
+                } else {
+                    // Stop looping future audio segments, but allow running segment to play to the end
+                    localCharacterIsMovingState = false; 
+                }
+
+                if (!isGrounded) {
+                    velocityY += gravity; playerGroup.position.y += velocityY;
+                    if (playerGroup.position.y <= 0.5) { playerGroup.position.y = 0.5; velocityY = 0; isGrounded = true; }
+                }
+
+                actualZoom += (targetZoom - actualZoom) * 0.1;
+                if (actualZoom < 0.5) { cameraMode = 1; document.getElementById('crosshair').style.display = 'block'; } 
+                else { cameraMode = 3; document.getElementById('crosshair').style.display = 'none'; }
+
+                const lookDirX = -Math.sin(yaw) * Math.cos(pitch); const lookDirY = Math.sin(pitch); const lookDirZ = -Math.cos(yaw) * Math.cos(pitch);
+
+                if (cameraMode === 1) {
+                    playerGroup.visible = false; camera.position.set(playerGroup.position.x, playerGroup.position.y + 0.3, playerGroup.position.z);
+                    camera.lookAt(camera.position.x + lookDirX, camera.position.y + lookDirY, camera.position.z + lookDirZ);
+                } else {
+                    playerGroup.visible = true;
+                    camera.position.set(playerGroup.position.x - lookDirX * actualZoom, playerGroup.position.y + 1 - lookDirY * actualZoom, playerGroup.position.z - lookDirZ * actualZoom);
+                    camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1, playerGroup.position.z);
+                }
+
+                // Smoothly update positions of other players on the network
+                remotePlayers.forEach((pData, id) => {
+                    if (Date.now() - pData.lastUpdate > 4000) { 
+                        scene.remove(pData.mesh); pData.mesh.geometry.dispose(); pData.mesh.material.dispose(); remotePlayers.delete(id);
+                        refreshFriendsVisualListing();
+                    } else {
+                        pData.mesh.position.lerp(pData.targetPos, 0.2); pData.mesh.quaternion.slerp(pData.targetQuat, 0.2);
+                    }
+                });
+
+                renderer.render(scene, camera);
+            }
+
+            // Window Resizing Listener references
+            const resizeRef = () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
+            window.addEventListener('resize', resizeRef);
+
+            // Expose Clean up functions for leaving rooms
+            window._teardownCurrentWorldInstance = () => {
+                cancelAnimationFrame(animationFrameHandle);
+                clearInterval(networkTransmissionIntervalHandle);
+                
+                document.removeEventListener('keydown', keydownRef); document.removeEventListener('keyup', keyupRef);
+                document.removeEventListener('mousedown', mousedownRef); document.removeEventListener('mouseup', mouseupRef);
+                document.removeEventListener('mousemove', mousemoveRef); document.removeEventListener('wheel', wheelRef);
+                document.removeEventListener('touchstart', touchstartRef); document.removeEventListener('touchmove', touchmoveRef);
+                document.removeEventListener('touchend', touchendRef);
+                window.removeEventListener('resize', resizeRef);
+
+                client.unsubscribe(`robox3d/rooms/${selectedGameId}/positions/#`, { qos: 0 });
+                
+                // Clear out rendered objects
+                remotePlayers.forEach((pData) => { scene.remove(pData.mesh); pData.mesh.geometry.dispose(); pData.mesh.material.dispose(); });
+                remotePlayers.clear();
+
+                renderer.dispose();
+                renderer.domElement.remove();
+                activeEngineSceneReference = null;
+            };
+
+            animate();
+        }
+
+        function exitWorldEngine() {
+            if (window._teardownCurrentWorldInstance) {
+                window._teardownCurrentWorldInstance();
+                window._teardownCurrentWorldInstance = null;
+            }
+            document.exitPointerLock?.();
+            document.getElementById('game-container').style.display = 'none';
+            document.getElementById('homepage-launcher').style.display = 'flex';
+            setTimeout(() => { document.getElementById('homepage-launcher').style.opacity = '1'; }, 50);
+            refreshFriendsVisualListing();
+        }
+
+        // Run Initial History load logs execution
+        renderSavedPersistentChatLogs();
+    </script>
+</body>
+</html>
